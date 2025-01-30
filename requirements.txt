@@ -1,2 +1,5 @@
-streamlit
+streamlit 
+beautiful
+soup4 
+nltk 
 pandas
