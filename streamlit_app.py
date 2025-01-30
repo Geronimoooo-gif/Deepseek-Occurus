@@ -1,151 +1,88 @@
 import streamlit as st
+from bs4 import BeautifulSoup
+import nltk
+from nltk.corpus import stopwords
+from collections import Counter
 import pandas as pd
-import math
-from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Télécharger les stopwords de NLTK
+nltk.download('stopwords')
+stop_words = set(stopwords.words('french'))
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# Fonction pour extraire le texte d'un contenu HTML
+def extract_text(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    text = soup.get_text()
+    return text
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# Fonction pour analyser sémantiquement le texte
+def analyze_text(text):
+    words = nltk.word_tokenize(text.lower())
+    words = [word for word in words if word.isalnum() and word not in stop_words]
+    word_freq = Counter(words)
+    return word_freq
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+# Fonction pour évaluer un site en fonction de la liste de mots-clés
+def evaluate_site(word_freq, target_freq):
+    score = 0
+    for word, freq in target_freq.items():
+        if word in word_freq:
+            score += min(freq, word_freq[word])
+    total_possible = sum(target_freq.values())
+    return (score / total_possible) * 100
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# Interface Streamlit
+st.title("Analyse Sémantique pour le SEO")
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+# Saisie du mot-clé
+keyword = st.text_input("Entrez le mot-clé sur lequel vous souhaitez positionner votre article :")
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# Saisie des contenus HTML des sites
+st.write("Collez le contenu HTML des 3 premiers sites de la SERP :")
+html1 = st.text_area("Site en position 1 :")
+html2 = st.text_area("Site en position 2 :")
+html3 = st.text_area("Site en position 3 :")
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+if st.button("Analyser"):
+    if keyword and html1 and html2 and html3:
+        # Extraire le texte des contenus HTML
+        text1 = extract_text(html1)
+        text2 = extract_text(html2)
+        text3 = extract_text(html3)
 
-    return gdp_df
+        # Analyser sémantiquement les textes
+        freq1 = analyze_text(text1)
+        freq2 = analyze_text(text2)
+        freq3 = analyze_text(text3)
 
-gdp_df = get_gdp_data()
+        # Générer la liste de mots-clés cible
+        target_freq = freq1 + freq2 + freq3
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+        # Afficher la liste de mots-clés
+        st.write("Liste de mots-clés à ajouter dans l'article :")
+        target_df = pd.DataFrame(target_freq.most_common(), columns=['Mot', 'Fréquence'])
+        st.dataframe(target_df)
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+        # Évaluer chaque site
+        score1 = evaluate_site(freq1, target_freq)
+        score2 = evaluate_site(freq2, target_freq)
+        score3 = evaluate_site(freq3, target_freq)
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+        st.write(f"Note du site 1 : {score1:.2f}/100")
+        st.write(f"Note du site 2 : {score2:.2f}/100")
+        st.write(f"Note du site 3 : {score3:.2f}/100")
 
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
+        # Exporter l'analyse au format CSV
+        export_df = pd.DataFrame({
+            'Site': ['Site 1', 'Site 2', 'Site 3'],
+            'Note': [score1, score2, score3]
+        })
+        csv = export_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Exporter l'analyse au format CSV",
+            data=csv,
+            file_name='analyse_seo.csv',
+            mime='text/csv',
         )
+    else:
+        st.error("Veuillez remplir tous les champs.")
