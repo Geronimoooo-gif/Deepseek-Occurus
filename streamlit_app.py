@@ -6,9 +6,18 @@ from nltk.corpus import stopwords
 from collections import Counter
 import pandas as pd
 
-# Télécharger les stopwords de NLTK
+# Télécharger les ressources nécessaires de NLTK
 nltk.download('stopwords')
 nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')  # Optionnel, mais utile pour des analyses avancées
+nltk.download('wordnet')  # Optionnel, mais utile pour des analyses avancées
+
+# Télécharger le tokenizer Punkt pour le français
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
 stop_words = set(stopwords.words('french'))
 
 # Fonction pour récupérer le contenu HTML d'une URL
